@@ -65,22 +65,41 @@
     return ["BM&P","Vital","Architype","Whitemore","Technology","Props","Costumes","Furniture","Consumables","Games and Puzzles","Artifacts"];
   }
 
+  // Maps each category name to its 3-letter ID prefix
+  const CATEGORY_PREFIXES = {
+    "BM&P": "BMP",
+    "Vital": "VIT",
+    "Architype": "ARC",
+    "Whitemore": "WHI",
+    "Technology": "TEC",
+    "Props": "PRO",
+    "Costumes": "CST",
+    "Furniture": "FUR",
+    "Consumables": "CON",
+    "Games and Puzzles": "PUZ",
+    "Artifacts": "ART"
+  };
+
+  function getPrefixForCategory(cat) {
+    if (CATEGORY_PREFIXES[cat]) return CATEGORY_PREFIXES[cat];
+    // Fallback for any custom category added later: first 3 letters, uppercased
+    return cat.replace(/[^a-zA-Z]/g, "").substring(0, 3).toUpperCase() || "GEN";
+  }
+
+  // Finds the next available number for a given prefix, e.g. TEC-001, TEC-002...
+  function getNextIdForCategory(cat) {
+    const prefix = getPrefixForCategory(cat);
+    const existingNums = Object.keys(inventory)
+      .filter(id => id.startsWith(prefix + "-"))
+      .map(id => parseInt(id.split("-")[1], 10))
+      .filter(n => !isNaN(n));
+    const next = existingNums.length ? Math.max(...existingNums) + 1 : 1;
+    return `${prefix}-${String(next).padStart(3, "0")}`;
+  }
+
   function seedInventory() {
-    const items = [
-      {id:"SG-001",name:"Clue Envelope Set",cat:"BM&P",desc:"Sealed envelopes with REALM clues",total:20,qty:20},
-      {id:"SG-002",name:"Bluetooth Speaker",cat:"Technology",desc:"JBL Flip 5 — ambient sound",total:3,qty:3},
-      {id:"SG-003",name:"Detective Costume Kit",cat:"Costumes",desc:"Hats, badges, trench coats",total:10,qty:10},
-      {id:"SG-004",name:"Puzzle Lock Box",cat:"Games and Puzzles",desc:"Combination lock boxes",total:6,qty:6},
-      {id:"SG-005",name:"Folding Table 6ft",cat:"Furniture",desc:"For staging and set design",total:4,qty:4},
-      {id:"SG-006",name:"Name Badge Holders",cat:"Consumables",desc:"Lanyard + badge sleeve sets",total:100,qty:100},
-      {id:"SG-007",name:"Portable LED Light Kit",cat:"Technology",desc:"Color-changing LED strips",total:5,qty:5},
-      {id:"SG-008",name:"Classified Folder Set",cat:"Vital",desc:"Red CLASSIFIED stamp folders",total:30,qty:30},
-      {id:"SG-009",name:"Actor Prop Phone",cat:"Props",desc:"Burner-style flip phones",total:4,qty:4},
-      {id:"SG-010",name:"Ancient Artifact Replica",cat:"Artifacts",desc:"Decorative scene-setting piece",total:3,qty:3},
-    ];
-    const obj = {};
-    items.forEach(item => { obj[item.id] = item; });
-    set(ref(db, 'inventory'), obj);
+    // Starting fresh — no sample items. The inventory begins empty.
+    set(ref(db, 'inventory'), {});
   }
 
   function setLoading(show) {
@@ -355,18 +374,26 @@
 
   // ── Add item ──
   window.addItem = function() {
-    const id = (document.getElementById("new-id").value||"").trim().toUpperCase();
     const name = (document.getElementById("new-name").value||"").trim();
     const cat = document.getElementById("new-cat").value;
     const qty = parseInt(document.getElementById("new-qty").value)||1;
     const desc = (document.getElementById("new-desc").value||"").trim();
-    if (!id||!name||!cat) { showToast("Fill in ID, name, and category", true); return; }
-    if (inventory[id]) { showToast("Barcode ID already exists", true); return; }
+    if (!name||!cat) { showToast("Fill in name and category", true); return; }
+
+    const id = getNextIdForCategory(cat);
     set(ref(db, `inventory/${id}`), {id, name, cat, desc, total:qty, qty});
-    ["new-id","new-name","new-desc"].forEach(i => document.getElementById(i).value="");
+    ["new-name","new-desc"].forEach(i => document.getElementById(i).value="");
     document.getElementById("new-qty").value=1;
-    showToast(`${name} added ✓`);
+    showToast(`${name} added as ${id} ✓`);
     window.switchPanel("inventory", document.getElementById("nav-inventory"));
+  };
+
+  // Updates the live ID preview shown in the Add Item form as the category changes
+  window.updateIdPreview = function() {
+    const cat = document.getElementById("new-cat").value;
+    const preview = document.getElementById("id-preview");
+    if (!cat) { preview.textContent = "Select a category to see the ID"; return; }
+    preview.textContent = getNextIdForCategory(cat);
   };
 
   // ── Categories ──
@@ -656,12 +683,18 @@
       <div class="card">
         <div class="card-header">Add New Item</div>
         <div class="card-body">
+          <div class="form-group">
+            <label class="form-label">Category</label>
+            <select class="form-select" id="new-cat" onchange="updateIdPreview()"></select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Barcode ID (auto-generated)</label>
+            <div id="id-preview" style="height:46px;display:flex;align-items:center;padding:0 14px;background:var(--teal-light);border:1.5px dashed var(--teal-mid);border-radius:var(--radius-sm);font-family:'DM Mono',monospace;font-size:15px;font-weight:500;color:var(--dark-teal);">Select a category to see the ID</div>
+          </div>
           <div class="form-row">
-            <div class="form-group"><label class="form-label">Barcode ID</label><input class="form-input" id="new-id" placeholder="e.g. SG-011" autocapitalize="characters" autocorrect="off" /></div>
+            <div class="form-group"><label class="form-label">Item Name</label><input class="form-input" id="new-name" placeholder="e.g. Puzzle Lock Box" /></div>
             <div class="form-group"><label class="form-label">Total Qty</label><input class="form-input" id="new-qty" type="number" value="1" min="1" /></div>
           </div>
-          <div class="form-group"><label class="form-label">Item Name</label><input class="form-input" id="new-name" placeholder="e.g. Puzzle Lock Box" /></div>
-          <div class="form-group"><label class="form-label">Category</label><select class="form-select" id="new-cat"></select></div>
           <div class="form-group"><label class="form-label">Description (optional)</label><input class="form-input" id="new-desc" placeholder="Notes about this item" /></div>
           <button class="btn-submit" onclick="addItem()">Add to Inventory</button>
         </div>
